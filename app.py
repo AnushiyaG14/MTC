@@ -492,31 +492,21 @@ class EnhancedDocumentDatabase:
             
             results = cursor.fetchall()
             
-            # Convert to list of dicts and parse JSON fields safely
+            # Convert to list of dicts and parse JSON fields
             documents = []
             for row in results:
                 doc = dict(row)
-                
-                # Safe JSON parsing with error handling
-                def safe_json_parse(json_str):
-                    if json_str is None:
-                        return None
-                    if isinstance(json_str, dict):
-                        return json_str  # Already parsed
-                    if isinstance(json_str, str):
-                        try:
-                            return json.loads(json_str)
-                        except (json.JSONDecodeError, ValueError):
-                            return None
-                    return None
-                
-                # Parse JSON fields safely
-                doc['chemical_composition'] = safe_json_parse(doc.get('chemical_composition'))
-                doc['mechanical_properties'] = safe_json_parse(doc.get('mechanical_properties'))
-                doc['heat_treatment'] = safe_json_parse(doc.get('heat_treatment'))
-                doc['compliance_standards'] = safe_json_parse(doc.get('compliance_standards'))
-                doc['raw_data'] = safe_json_parse(doc.get('raw_data'))
-                
+                # Parse JSON fields
+                if doc.get('chemical_composition'):
+                    doc['chemical_composition'] = json.loads(doc['chemical_composition'])
+                if doc.get('mechanical_properties'):
+                    doc['mechanical_properties'] = json.loads(doc['mechanical_properties'])
+                if doc.get('heat_treatment'):
+                    doc['heat_treatment'] = json.loads(doc['heat_treatment'])
+                if doc.get('compliance_standards'):
+                    doc['compliance_standards'] = json.loads(doc['compliance_standards'])
+                if doc.get('raw_data'):
+                    doc['raw_data'] = json.loads(doc['raw_data'])
                 documents.append(doc)
             
             cursor.close()
@@ -570,30 +560,19 @@ class EnhancedDocumentDatabase:
             cursor.execute(query, params)
             results = cursor.fetchall()
             
-            # Convert to list of dicts and parse JSON fields safely
+            # Convert to list of dicts and parse JSON fields
             documents = []
             for row in results:
                 doc = dict(row)
-                
-                # Safe JSON parsing
-                def safe_json_parse(json_str):
-                    if json_str is None:
-                        return None
-                    if isinstance(json_str, dict):
-                        return json_str  # Already parsed
-                    if isinstance(json_str, str):
-                        try:
-                            return json.loads(json_str)
-                        except (json.JSONDecodeError, ValueError):
-                            return None
-                    return None
-                
-                # Parse JSON fields safely
-                doc['chemical_composition'] = safe_json_parse(doc.get('chemical_composition'))
-                doc['mechanical_properties'] = safe_json_parse(doc.get('mechanical_properties'))
-                doc['heat_treatment'] = safe_json_parse(doc.get('heat_treatment'))
-                doc['compliance_standards'] = safe_json_parse(doc.get('compliance_standards'))
-                
+                # Parse JSON fields
+                if doc.get('chemical_composition'):
+                    doc['chemical_composition'] = json.loads(doc['chemical_composition'])
+                if doc.get('mechanical_properties'):
+                    doc['mechanical_properties'] = json.loads(doc['mechanical_properties'])
+                if doc.get('heat_treatment'):
+                    doc['heat_treatment'] = json.loads(doc['heat_treatment'])
+                if doc.get('compliance_standards'):
+                    doc['compliance_standards'] = json.loads(doc['compliance_standards'])
                 documents.append(doc)
             
             cursor.close()
