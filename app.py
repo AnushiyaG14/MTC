@@ -1,18 +1,4 @@
-# Convert to list of dicts and parse JSON fields safely
-            documents = []
-            for row in results:
-                doc = dict(row)
-                # Parse JSON fields safely - check if they're already parsed
-                try:
-                    if doc.get('chemical_composition') and isinstance(doc['chemical_composition'], str):
-                        doc['chemical_composition'] = json.loads(doc['chemical_composition'])
-                except (json.JSONDecodeError, TypeError):
-                    pass  # Keep original value if parsing fails
-                
-                try:
-                    if doc.get('mechanical_properties') and isinstance(doc['mechanical_properties'], str):
-                        doc['mechanical_properties'] = json.loads(doc['mechanical_properties'])
-                except (json.JSONDecodeimport streamlit as st
+import streamlit as st
 import pandas as pd
 import numpy as np
 import psycopg2
@@ -574,21 +560,41 @@ class EnhancedDocumentDatabase:
             
             results = cursor.fetchall()
             
-            # Convert to list of dicts and parse JSON fields
+            # Convert to list of dicts and handle JSON fields
             documents = []
             for row in results:
                 doc = dict(row)
-                # Parse JSON fields
-                if doc.get('chemical_composition'):
-                    doc['chemical_composition'] = json.loads(doc['chemical_composition'])
-                if doc.get('mechanical_properties'):
-                    doc['mechanical_properties'] = json.loads(doc['mechanical_properties'])
-                if doc.get('heat_treatment'):
-                    doc['heat_treatment'] = json.loads(doc['heat_treatment'])
-                if doc.get('compliance_standards'):
-                    doc['compliance_standards'] = json.loads(doc['compliance_standards'])
-                if doc.get('raw_data'):
-                    doc['raw_data'] = json.loads(doc['raw_data'])
+                # JSON fields are already parsed by psycopg2, only parse if they're strings
+                if doc.get('chemical_composition') and isinstance(doc['chemical_composition'], str):
+                    try:
+                        doc['chemical_composition'] = json.loads(doc['chemical_composition'])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                
+                if doc.get('mechanical_properties') and isinstance(doc['mechanical_properties'], str):
+                    try:
+                        doc['mechanical_properties'] = json.loads(doc['mechanical_properties'])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                
+                if doc.get('heat_treatment') and isinstance(doc['heat_treatment'], str):
+                    try:
+                        doc['heat_treatment'] = json.loads(doc['heat_treatment'])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                
+                if doc.get('compliance_standards') and isinstance(doc['compliance_standards'], str):
+                    try:
+                        doc['compliance_standards'] = json.loads(doc['compliance_standards'])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                
+                if doc.get('raw_data') and isinstance(doc['raw_data'], str):
+                    try:
+                        doc['raw_data'] = json.loads(doc['raw_data'])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                
                 documents.append(doc)
             
             cursor.close()
@@ -619,7 +625,7 @@ class EnhancedDocumentDatabase:
                     or_conditions = []
                     for or_condition in value:
                         for or_field, or_value in or_condition.items():
-                            if "$regex" in or_value:
+                            if isinstance(or_value, dict) and "$regex" in or_value:
                                 or_conditions.append(f"{or_field} ILIKE %s")
                                 params.append(f"%{or_value['$regex']}%")
                     if or_conditions:
@@ -642,19 +648,35 @@ class EnhancedDocumentDatabase:
             cursor.execute(query, params)
             results = cursor.fetchall()
             
-            # Convert to list of dicts and parse JSON fields
+            # Convert to list of dicts and handle JSON fields
             documents = []
             for row in results:
                 doc = dict(row)
-                # Parse JSON fields
-                if doc.get('chemical_composition'):
-                    doc['chemical_composition'] = json.loads(doc['chemical_composition'])
-                if doc.get('mechanical_properties'):
-                    doc['mechanical_properties'] = json.loads(doc['mechanical_properties'])
-                if doc.get('heat_treatment'):
-                    doc['heat_treatment'] = json.loads(doc['heat_treatment'])
-                if doc.get('compliance_standards'):
-                    doc['compliance_standards'] = json.loads(doc['compliance_standards'])
+                # JSON fields are already parsed by psycopg2, only parse if they're strings
+                if doc.get('chemical_composition') and isinstance(doc['chemical_composition'], str):
+                    try:
+                        doc['chemical_composition'] = json.loads(doc['chemical_composition'])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                
+                if doc.get('mechanical_properties') and isinstance(doc['mechanical_properties'], str):
+                    try:
+                        doc['mechanical_properties'] = json.loads(doc['mechanical_properties'])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                
+                if doc.get('heat_treatment') and isinstance(doc['heat_treatment'], str):
+                    try:
+                        doc['heat_treatment'] = json.loads(doc['heat_treatment'])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                
+                if doc.get('compliance_standards') and isinstance(doc['compliance_standards'], str):
+                    try:
+                        doc['compliance_standards'] = json.loads(doc['compliance_standards'])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                
                 documents.append(doc)
             
             cursor.close()
