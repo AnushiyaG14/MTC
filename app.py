@@ -777,54 +777,92 @@ class AdvancedDocumentParser:
             st.info("No pre-trained models found. Will train on first use.")
     
     def extract_text_from_pdf(self, file_content: bytes) -> str:
-        """Extract text from PDF with multiple fallback methods"""
+        """Extract text from PDF with multiple fallback methods and better error handling"""
         try:
             if not PYMUPDF_AVAILABLE:
                 return "PDF extraction requires PyMuPDF. Please install: pip install pymupdf"
             
-            # Try newer PyMuPDF API first
+            # Try PyMuPDF with multiple methods
+            text = ""
+            doc = None
+            
             try:
+                # Method 1: Try newer PyMuPDF API first
                 if 'pymupdf' in globals():
                     doc = pymupdf.open(stream=file_content, filetype="pdf")
                 else:
                     doc = fitz.open(stream=file_content, filetype="pdf")
+                
+                # Extract text from all pages with different methods
+                for page_num in range(len(doc)):
+                    page = doc[page_num]
+                    
+                    # Method 1: Standard text extraction
+                    page_text = page.get_text()
+                    if page_text.strip():
+                        text += f"\n--- Page {page_num + 1} ---\n"
+                        text += page_text + "\n"
+                    
+                    # Method 2: Try extracting text blocks if standard method fails
+                    if not page_text.strip():
+                        try:
+                            blocks = page.get_text("blocks")
+                            for block in blocks:
+                                if len(block) >= 5 and block[4].strip():  # block[4] contains text
+                                    text += block[4] + "\n"
+                        except:
+                            pass
+                    
+                    # Method 3: Try dictionary extraction for more detailed info
+                    if not page_text.strip():
+                        try:
+                            text_dict = page.get_text("dict")
+                            for block in text_dict.get("blocks", []):
+                                if "lines" in block:
+                                    for line in block["lines"]:
+                                        for span in line.get("spans", []):
+                                            if span.get("text", "").strip():
+                                                text += span["text"] + " "
+                                    text += "\n"
+                        except:
+                            pass
+                
+                doc.close()
+                
             except Exception as e:
+                st.warning(f"PyMuPDF primary method failed: {str(e)}")
                 # Try alternative opening methods
                 try:
-                    # Method 1: Open from bytes directly
-                    if 'pymupdf' in globals():
-                        doc = pymupdf.open("pdf", file_content)
-                    else:
-                        doc = fitz.open("pdf", file_content)
-                except Exception as e2:
-                    # Method 2: Save to temp file and open
-                    try:
-                        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_file:
-                            tmp_file.write(file_content)
-                            tmp_file.flush()
-                            
-                            if 'pymupdf' in globals():
-                                doc = pymupdf.open(tmp_file.name)
-                            else:
-                                doc = fitz.open(tmp_file.name)
+                    # Save to temp file and open
+                    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_file:
+                        tmp_file.write(file_content)
+                        tmp_file.flush()
                         
-                        # Clean up temp file
-                        os.unlink(tmp_file.name)
-                    except Exception as e3:
-                        st.error(f"PDF opening failed with all methods: {str(e)}, {str(e2)}, {str(e3)}")
-                        return self._extract_pdf_with_alternative_methods(file_content)
+                        if 'pymupdf' in globals():
+                            doc = pymupdf.open(tmp_file.name)
+                        else:
+                            doc = fitz.open(tmp_file.name)
+                    
+                    # Extract text
+                    for page_num in range(len(doc)):
+                        page = doc[page_num]
+                        text += page.get_text() + "\n"
+                    
+                    doc.close()
+                    # Clean up temp file
+                    os.unlink(tmp_file.name)
+                    
+                except Exception as e2:
+                    st.warning(f"Alternative PyMuPDF method failed: {str(e2)}")
+                    return self._extract_pdf_with_alternative_methods(file_content)
             
-            # Extract text from all pages
-            text = ""
-            for page_num in range(len(doc)):
-                page = doc[page_num]
-                text += page.get_text() + "\n"
-            
-            doc.close()
-            
-            if not text.strip():
-                # If no text extracted, try alternative methods
+            # Check if we got meaningful text
+            if not text.strip() or len(text.strip()) < 50:
+                st.warning("PyMuPDF extracted very little text, trying alternative methods...")
                 return self._extract_pdf_with_alternative_methods(file_content)
+            
+            # Clean up the text
+            text = self._clean_extracted_text(text)
             
             return text
             
@@ -832,62 +870,23 @@ class AdvancedDocumentParser:
             st.warning(f"PyMuPDF extraction failed: {str(e)}")
             return self._extract_pdf_with_alternative_methods(file_content)
     
-    def _extract_pdf_with_alternative_methods(self, file_content: bytes) -> str:
-        """Alternative PDF extraction methods"""
-        try:
-            # Method 1: Try with PyPDF2 if available
-            try:
-                import PyPDF2
-                pdf_file = io.BytesIO(file_content)
-                pdf_reader = PyPDF2.PdfReader(pdf_file)
-                text = ""
-                for page in pdf_reader.pages:
-                    text += page.extract_text() + "\n"
-                if text.strip():
-                    return text
-            except ImportError:
-                pass
-            except Exception as e:
-                st.warning(f"PyPDF2 extraction failed: {str(e)}")
-            
-            # Method 2: Try with pdfplumber if available
-            try:
-                import pdfplumber
-                with pdfplumber.open(io.BytesIO(file_content)) as pdf:
-                    text = ""
-                    for page in pdf.pages:
-                        page_text = page.extract_text()
-                        if page_text:
-                            text += page_text + "\n"
-                if text.strip():
-                    return text
-            except ImportError:
-                pass
-            except Exception as e:
-                st.warning(f"pdfplumber extraction failed: {str(e)}")
-            
-            # Method 3: Basic text extraction attempt
-            try:
-                # Try to decode as text (might work for simple PDFs)
-                text = file_content.decode('utf-8', errors='ignore')
-                if len(text) > 100 and 'PDF' not in text[:50]:  # Basic validation
-                    return text
-            except:
-                pass
-            
-            # If all methods fail, return informative message
-            return """PDF text extraction failed with all available methods. 
-
-To fix this, you can:
-1. Install PyMuPDF: pip install pymupdf
-2. Or install PyPDF2: pip install PyPDF2
-3. Or install pdfplumber: pip install pdfplumber
-4. Or convert your PDF to text/Word format and re-upload
-
-Alternative: Copy the text from your PDF and paste it into a .txt file to upload."""
-            
-        except Exception as e:
-            return f"PDF text extraction completely failed: {str(e)}"
+    def _clean_extracted_text(self, text: str) -> str:
+        """Clean and normalize extracted text"""
+        if not text:
+            return ""
+        
+        # Remove excessive whitespace while preserving structure
+        lines = text.split('\n')
+        cleaned_lines = []
+        
+        for line in lines:
+            line = line.strip()
+            if line:  # Only keep non-empty lines
+                # Replace multiple spaces with single space
+                line = ' '.join(line.split())
+                cleaned_lines.append(line)
+        
+        return '\n'.join(cleaned_lines)
     
     def extract_text_from_excel(self, file_content: bytes) -> str:
         """Extract text from Excel"""
@@ -908,111 +907,187 @@ Alternative: Copy the text from your PDF and paste it into a .txt file to upload
             return ""
     
     def intelligent_field_extraction(self, text: str) -> Dict:
-        """Advanced intelligent field extraction using multiple patterns"""
+        """Enhanced intelligent field extraction with better patterns for certificates"""
         result = {}
+        
+        print(f"DEBUG: Extracted text length: {len(text)}")
+        print(f"DEBUG: First 500 chars of text: {text[:500]}")
         
         # Enhanced regex patterns for various certificate formats
         advanced_patterns = {
             'certificate_number': [
-                r'(?i)certificate\s*(?:no|number|#)\.?\s*:?\s*([A-Z0-9\-/\.]+)',
-                r'(?i)cert\.?\s*(?:no|#|number)\.?\s*:?\s*([A-Z0-9\-/\.]+)',
-                r'(?i)document\s*(?:no|number)\.?\s*:?\s*([A-Z0-9\-/\.]+)',
-                r'(?i)serial\s*(?:no|number)\.?\s*:?\s*([A-Z0-9\-/\.]+)'
+                r'(?i)MAT\.\s*CERT\.\s*N[oº°]?\.?\s*:?\s*([A-Z0-9\-/\.]+)',
+                r'(?i)certificate\s*(?:no|number|#|n[oº°])\.?\s*:?\s*([A-Z0-9\-/\.]+)',
+                r'(?i)cert\.?\s*(?:no|#|number|n[oº°])\.?\s*:?\s*([A-Z0-9\-/\.]+)',
+                r'(?i)document\s*(?:no|number|n[oº°])\.?\s*:?\s*([A-Z0-9\-/\.]+)',
             ],
             'heat_number': [
-                r'(?i)heat\s*(?:no|number)\.?\s*:?\s*([A-Z0-9\-/\.]+)',
+                r'(?i)heat\s*(?:no|number|n[oº°])\.?\s*:?\s*([A-Z0-9\-/\.]+)',
                 r'(?i)heat\s*([A-Z0-9\-/\.]+)',
                 r'(?i)ladle\s*(?:no|number)\.?\s*:?\s*([A-Z0-9\-/\.]+)',
-                r'(?i)melt\s*(?:no|number)\.?\s*:?\s*([A-Z0-9\-/\.]+)'
+                r'(?i)melt\s*(?:no|number)\.?\s*:?\s*([A-Z0-9\-/\.]+)',
+                r'(?i)T\.\s*Heat\s*N[oº°]?\s*([A-Z0-9\-/\.]+)',
             ],
             'material_grade': [
+                r'(?i)ASTM\s+([A-Z0-9\-]+)\s+([A-Z0-9\-]+)',  # ASTM A-351 CF8M
                 r'(?i)grade\s*:?\s*([A-Z0-9\-/\.]+)',
                 r'(?i)material\s*grade\s*:?\s*([A-Z0-9\-/\.]+)',
                 r'(?i)steel\s*grade\s*:?\s*([A-Z0-9\-/\.]+)',
-                r'(?i)alloy\s*:?\s*([A-Z0-9\-/\.]+)'
             ],
             'specification': [
+                r'(?i)(ASTM\s+A-\d+\s+[A-Z0-9\-]+(?:\s+Ed\.\s*\d+)?)',
                 r'(?i)specification\s*:?\s*([A-Z0-9\s\-/\.]+)',
                 r'(?i)spec\.?\s*:?\s*([A-Z0-9\s\-/\.]+)',
                 r'(?i)standard\s*:?\s*([A-Z0-9\s\-/\.]+)',
-                r'(?i)norm\s*:?\s*([A-Z0-9\s\-/\.]+)'
             ],
             'manufacturer': [
+                r'(?i)([A-Za-z0-9\s\-&\.]+(?:Valve|Manufacture|Manufacturing|Steel|Metal|Corp|Co|Ltd|Inc)[A-Za-z0-9\s\-&\.]*)',
                 r'(?i)manufacturer\s*:?\s*([A-Za-z0-9\s\-&\.]+)',
                 r'(?i)producer\s*:?\s*([A-Za-z0-9\s\-&\.]+)',
-                r'(?i)mill\s*:?\s*([A-Za-z0-9\s\-&\.]+)',
-                r'(?i)supplier\s*:?\s*([A-Za-z0-9\s\-&\.]+)'
-            ]
-        }
-        
-        # Chemical composition patterns
-        chemical_patterns = {
-            'carbon': [r'(?i)c\s*[:\-]?\s*(\d+\.?\d*)', r'(?i)carbon\s*[:\-]?\s*(\d+\.?\d*)'],
-            'silicon': [r'(?i)si\s*[:\-]?\s*(\d+\.?\d*)', r'(?i)silicon\s*[:\-]?\s*(\d+\.?\d*)'],
-            'manganese': [r'(?i)mn\s*[:\-]?\s*(\d+\.?\d*)', r'(?i)manganese\s*[:\-]?\s*(\d+\.?\d*)'],
-            'phosphorus': [r'(?i)p\s*[:\-]?\s*(\d+\.?\d*)', r'(?i)phosphorus\s*[:\-]?\s*(\d+\.?\d*)'],
-            'sulfur': [r'(?i)s\s*[:\-]?\s*(\d+\.?\d*)', r'(?i)sulfur\s*[:\-]?\s*(\d+\.?\d*)'],
-            'chromium': [r'(?i)cr\s*[:\-]?\s*(\d+\.?\d*)', r'(?i)chromium\s*[:\-]?\s*(\d+\.?\d*)'],
-            'nickel': [r'(?i)ni\s*[:\-]?\s*(\d+\.?\d*)', r'(?i)nickel\s*[:\-]?\s*(\d+\.?\d*)'],
-            'molybdenum': [r'(?i)mo\s*[:\-]?\s*(\d+\.?\d*)', r'(?i)molybdenum\s*[:\-]?\s*(\d+\.?\d*)']
-        }
-        
-        # Mechanical properties patterns
-        mechanical_patterns = {
-            'yield_strength': [
-                r'(?i)yield\s*strength\s*[:\-]?\s*(\d+\.?\d*)',
-                r'(?i)ys\s*[:\-]?\s*(\d+\.?\d*)',
-                r'(?i)rp0?\.?2\s*[:\-]?\s*(\d+\.?\d*)'
             ],
-            'tensile_strength': [
-                r'(?i)tensile\s*strength\s*[:\-]?\s*(\d+\.?\d*)',
-                r'(?i)uts\s*[:\-]?\s*(\d+\.?\d*)',
-                r'(?i)rm\s*[:\-]?\s*(\d+\.?\d*)'
+            'customer_name': [
+                r'(?i)CLIENT\s*[:\-]?\s*([A-Z0-9\s\-&\.]+)',
+                r'(?i)customer\s*:?\s*([A-Za-z0-9\s\-&\.]+)',
             ],
-            'elongation': [
-                r'(?i)elongation\s*[:\-]?\s*(\d+\.?\d*)',
-                r'(?i)el\s*[:\-]?\s*(\d+\.?\d*)',
-                r'(?i)a\s*[:\-]?\s*(\d+\.?\d*)\s*%'
+            'order_number': [
+                r'(?i)P\.O\.\s*N[oº°]?\s*:?\s*([A-Z0-9\-/\.]+)',
+                r'(?i)P\.O\.\s*:?\s*([A-Z0-9\-/\.]+)',
+                r'(?i)order\s*(?:no|number)\.?\s*:?\s*([A-Z0-9\-/\.]+)',
             ]
         }
         
         # Apply basic information patterns
         for field, field_patterns in advanced_patterns.items():
             for pattern in field_patterns:
-                match = re.search(pattern, text, re.IGNORECASE)
+                match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
                 if match:
-                    result[field] = match.group(1).strip()
+                    if field == 'specification' and 'ASTM' in match.group(1):
+                        result[field] = match.group(1).strip()
+                    elif field == 'material_grade' and 'ASTM' in match.group(0):
+                        # Extract the grade part (like CF8M from ASTM A-351 CF8M)
+                        full_match = match.group(0)
+                        grade_match = re.search(r'ASTM\s+A-\d+\s+([A-Z0-9\-]+)', full_match)
+                        if grade_match:
+                            result[field] = grade_match.group(1)
+                    else:
+                        result[field] = match.group(1).strip()
                     break
         
-        # Chemical composition
+        # Enhanced chemical composition extraction with tabular data support
         chemical_composition = {}
-        for element, element_patterns in chemical_patterns.items():
-            for pattern in element_patterns:
-                match = re.search(pattern, text, re.IGNORECASE)
-                if match:
-                    try:
-                        chemical_composition[element] = float(match.group(1))
-                        break
-                    except ValueError:
-                        continue
+        
+        # Method 1: Extract from tabular format (like in your PDF)
+        table_patterns = [
+            # Pattern for your specific format: Heat N° Qty C Mn S P Si Cr Ni Mo values...
+            r'(?i)(\w+)\s+(\d+)\s+([\d\.]+)\s+([\d\.]+)\s+([\d\.]+)\s+([\d\.]+)\s+([\d\.]+)\s+([\d\.]+)\s+([\d\.]+)\s+([\d\.]+)',
+        ]
+        
+        for pattern in table_patterns:
+            matches = re.findall(pattern, text)
+            for match in matches:
+                if len(match) >= 10:  # Heat, Qty, C, Mn, S, P, Si, Cr, Ni, Mo
+                    # Use the first matching row for composition
+                    chemical_composition = {
+                        'carbon': float(match[2]) if match[2] != '-' else None,
+                        'manganese': float(match[3]) if match[3] != '-' else None,
+                        'sulfur': float(match[4]) if match[4] != '-' else None,
+                        'phosphorus': float(match[5]) if match[5] != '-' else None,
+                        'silicon': float(match[6]) if match[6] != '-' else None,
+                        'chromium': float(match[7]) if match[7] != '-' else None,
+                        'nickel': float(match[8]) if match[8] != '-' else None,
+                        'molybdenum': float(match[9]) if match[9] != '-' else None,
+                    }
+                    result['heat_number'] = match[0]  # Heat number from table
+                    break
+        
+        # Method 2: Standard chemical composition patterns
+        if not chemical_composition:
+            chemical_patterns = {
+                'carbon': [r'(?i)C[-\s]*(\d+\.?\d*)', r'(?i)carbon\s*[:\-]?\s*(\d+\.?\d*)'],
+                'silicon': [r'(?i)Si[-\s]*(\d+\.?\d*)', r'(?i)silicon\s*[:\-]?\s*(\d+\.?\d*)'],
+                'manganese': [r'(?i)Mn[-\s]*(\d+\.?\d*)', r'(?i)manganese\s*[:\-]?\s*(\d+\.?\d*)'],
+                'phosphorus': [r'(?i)P[-\s]*(\d+\.?\d*)', r'(?i)phosphorus\s*[:\-]?\s*(\d+\.?\d*)'],
+                'sulfur': [r'(?i)S[-\s]*(\d+\.?\d*)', r'(?i)sulfur\s*[:\-]?\s*(\d+\.?\d*)'],
+                'chromium': [r'(?i)Cr[-\s]*(\d+\.?\d*)', r'(?i)chromium\s*[:\-]?\s*(\d+\.?\d*)'],
+                'nickel': [r'(?i)Ni[-\s]*(\d+\.?\d*)', r'(?i)nickel\s*[:\-]?\s*(\d+\.?\d*)'],
+                'molybdenum': [r'(?i)Mo[-\s]*(\d+\.?\d*)', r'(?i)molybdenum\s*[:\-]?\s*(\d+\.?\d*)']
+            }
+            
+            for element, element_patterns in chemical_patterns.items():
+                for pattern in element_patterns:
+                    match = re.search(pattern, text, re.IGNORECASE)
+                    if match:
+                        try:
+                            chemical_composition[element] = float(match.group(1))
+                            break
+                        except ValueError:
+                            continue
         
         if chemical_composition:
             result['chemical_composition'] = chemical_composition
         
-        # Mechanical properties
+        # Enhanced mechanical properties extraction
         mechanical_properties = {}
-        for prop, prop_patterns in mechanical_patterns.items():
-            for pattern in prop_patterns:
-                match = re.search(pattern, text, re.IGNORECASE)
-                if match:
-                    try:
-                        mechanical_properties[prop] = float(match.group(1))
-                        break
-                    except ValueError:
-                        continue
+        
+        # Method 1: Extract from tabular format
+        mech_table_pattern = r'(?i)(\w+)\s+(\d+)\s+[\d\.]+\s+[\d\.]+\s+[\d\.]+\s+[\d\.]+\s+[\d\.]+\s+[\d\.]+\s+[\d\.]+\s+[\d\.]+\s+(\d+)\s+(\d+)\s+(\d+)'
+        matches = re.findall(mech_table_pattern, text)
+        
+        for match in matches:
+            if len(match) >= 5:
+                mechanical_properties = {
+                    'yield_strength': float(match[2]) if match[2] != '-' else None,
+                    'tensile_strength': float(match[3]) if match[3] != '-' else None,
+                    'elongation': float(match[4]) if match[4] != '-' else None,
+                }
+                break
+        
+        # Method 2: Standard mechanical properties patterns
+        if not mechanical_properties:
+            mechanical_patterns = {
+                'yield_strength': [
+                    r'(?i)yield\s*strength\s*[:\-]?\s*(\d+\.?\d*)',
+                    r'(?i)ys\s*[:\-]?\s*(\d+\.?\d*)',
+                    r'(?i)rp0?\.?2\s*[:\-]?\s*(\d+\.?\d*)'
+                ],
+                'tensile_strength': [
+                    r'(?i)tensile\s*strength\s*[:\-]?\s*(\d+\.?\d*)',
+                    r'(?i)uts\s*[:\-]?\s*(\d+\.?\d*)',
+                    r'(?i)rm\s*[:\-]?\s*(\d+\.?\d*)'
+                ],
+                'elongation': [
+                    r'(?i)elongation\s*[:\-]?\s*(\d+\.?\d*)',
+                    r'(?i)el\s*[:\-]?\s*(\d+\.?\d*)',
+                ]
+            }
+            
+            for prop, prop_patterns in mechanical_patterns.items():
+                for pattern in prop_patterns:
+                    match = re.search(pattern, text, re.IGNORECASE)
+                    if match:
+                        try:
+                            mechanical_properties[prop] = float(match.group(1))
+                            break
+                        except ValueError:
+                            continue
         
         if mechanical_properties:
             result['mechanical_properties'] = mechanical_properties
+        
+        # Heat treatment extraction
+        heat_treatment = {}
+        ht_pattern = r'(?i)SOLUTION\s+(\d+)[ºC°]+\s*x\s*(\d+)H\s*([A-Z\s]+COOLING)'
+        ht_match = re.search(ht_pattern, text)
+        if ht_match:
+            heat_treatment = {
+                'process': 'Solution Treatment',
+                'temperature': float(ht_match.group(1)),
+                'time': f"{ht_match.group(2)}H",
+                'cooling_method': ht_match.group(3).strip()
+            }
+            result['heat_treatment'] = heat_treatment
+        
+        print(f"DEBUG: Final extracted result keys: {result.keys()}")
         
         return result
     
