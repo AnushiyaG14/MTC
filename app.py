@@ -1,4 +1,18 @@
-import streamlit as st
+# Convert to list of dicts and parse JSON fields safely
+            documents = []
+            for row in results:
+                doc = dict(row)
+                # Parse JSON fields safely - check if they're already parsed
+                try:
+                    if doc.get('chemical_composition') and isinstance(doc['chemical_composition'], str):
+                        doc['chemical_composition'] = json.loads(doc['chemical_composition'])
+                except (json.JSONDecodeError, TypeError):
+                    pass  # Keep original value if parsing fails
+                
+                try:
+                    if doc.get('mechanical_properties') and isinstance(doc['mechanical_properties'], str):
+                        doc['mechanical_properties'] = json.loads(doc['mechanical_properties'])
+                except (json.JSONDecodeimport streamlit as st
 import pandas as pd
 import numpy as np
 import psycopg2
