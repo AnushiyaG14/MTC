@@ -463,7 +463,75 @@ class EnhancedDocumentDatabase:
                 'raw_data': safe_json_dumps(document_data)
             }
             
-            cursor.execute(insert_query, data_params)
+            try:
+                cursor.execute(insert_query, data_params)
+            except Exception as db_error:
+                # If named parameters fail, try with psycopg2.sql for better compatibility
+                import psycopg2.sql as sql
+                
+                # Alternative query with numbered parameters
+                alt_query = """
+                    INSERT INTO documents (
+                        document_id, file_name, certificate_number, heat_number, 
+                        material_grade, specification, manufacturer, customer_name,
+                        order_number, cast_number, lot_number, product_form, dimensions,
+                        thickness, width, length, diameter, weight, quantity,
+                        manufacturing_date, test_date, certificate_date,
+                        chemical_composition, mechanical_properties, heat_treatment,
+                        test_temperature, test_standard, sampling_location, test_direction,
+                        certified_by, inspector_name, approval_signature, remarks,
+                        compliance_standards, confidence_score, file_type,
+                        extracted_text_length, raw_data
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s
+                    )
+                """
+                
+                # Convert dict to tuple in correct order
+                data_tuple = (
+                    data_params['document_id'],
+                    data_params['file_name'],
+                    data_params['certificate_number'],
+                    data_params['heat_number'],
+                    data_params['material_grade'],
+                    data_params['specification'],
+                    data_params['manufacturer'],
+                    data_params['customer_name'],
+                    data_params['order_number'],
+                    data_params['cast_number'],
+                    data_params['lot_number'],
+                    data_params['product_form'],
+                    data_params['dimensions'],
+                    data_params['thickness'],
+                    data_params['width'],
+                    data_params['length'],
+                    data_params['diameter'],
+                    data_params['weight'],
+                    data_params['quantity'],
+                    data_params['manufacturing_date'],
+                    data_params['test_date'],
+                    data_params['certificate_date'],
+                    data_params['chemical_composition'],
+                    data_params['mechanical_properties'],
+                    data_params['heat_treatment'],
+                    data_params['test_temperature'],
+                    data_params['test_standard'],
+                    data_params['sampling_location'],
+                    data_params['test_direction'],
+                    data_params['certified_by'],
+                    data_params['inspector_name'],
+                    data_params['approval_signature'],
+                    data_params['remarks'],
+                    data_params['compliance_standards'],
+                    data_params['confidence_score'],
+                    data_params['file_type'],
+                    data_params['extracted_text_length'],
+                    data_params['raw_data']
+                )
+                
+                cursor.execute(alt_query, data_tuple)
             
             conn.commit()
             cursor.close()
